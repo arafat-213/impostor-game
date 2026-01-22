@@ -64,6 +64,33 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('start_voting', ({ lobbyId }) => {
+    const result = gameManager.startVoting(lobbyId, socket.id);
+    if (result.error) {
+      socket.emit('error_message', result.error);
+    } else {
+      io.to(lobbyId).emit('lobby_update', result.lobby);
+    }
+  });
+
+  socket.on('submit_vote', ({ lobbyId, userId, targetUserId }) => {
+    const result = gameManager.submitVote(lobbyId, userId, targetUserId);
+    if (result.error) {
+      socket.emit('error_message', result.error);
+    } else {
+      io.to(lobbyId).emit('lobby_update', result.lobby);
+    }
+  });
+
+  socket.on('end_game', ({ lobbyId }) => {
+    const result = gameManager.endGame(lobbyId, socket.id);
+    if (result.error) {
+       socket.emit('error_message', result.error);
+    } else {
+       io.to(lobbyId).emit('lobby_update', result.lobby);
+    }
+  });
+
   socket.on('add_word', ({ lobbyId, word }) => {
     const result = gameManager.addWord(lobbyId, socket.id, word);
     if (result.error) {

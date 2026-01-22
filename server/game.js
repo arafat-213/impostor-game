@@ -20,7 +20,10 @@ class GameManager {
       words: [...this.words], // Copy default words to lobby
       settings: {
         impostorCount: 1
-      }
+      },
+      scores: { [userId]: 0 }, // userId -> points
+      votes: {}, // userId -> targetUserId
+      roundResults: null
     });
     return lobbyId;
   }
@@ -57,6 +60,9 @@ class GameManager {
     // For now simple join
     
     lobby.players.push({ id: playerId, name: playerName, userId, connected: true });
+    if (lobby.scores[userId] === undefined) {
+        lobby.scores[userId] = 0;
+    }
     return { lobby };
   }
 
@@ -127,7 +133,107 @@ class GameManager {
     lobby.impostorId = lobby.impostorIds[0]; 
 
     lobby.status = 'playing';
+    lobby.votes = {};
+    lobby.roundResults = null;
 
+    return { lobby };
+  }
+
+  startVoting(lobbyId, requesterId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { error: 'Lobby not found' };
+    if (lobby.hostId !== requesterId) return { error: 'Only host can start voting' };
+    
+    lobby.status = 'voting';
+    lobby.votes = {};
+    return { lobby };
+  }
+
+  submitVote(lobbyId, userId, targetUserId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { error: 'Lobby not found' };
+    if (lobby.status !== 'voting') return { error: 'Voting not active' };
+
+    lobby.votes[userId] = targetUserId;
+
+    // Check if all connected players have voted
+    const connectedPlayers = lobby.players.filter(p => p.connected);
+    const everyoneVoted = connectedPlayers.every(p => lobby.votes[p.userId]);
+
+    if (everyoneVoted) {
+        return this.calculateScores(lobbyId);
+    }
+
+    return { lobby };
+  }
+
+  calculateScores(lobbyId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { error: 'Lobby not found' };
+
+    const impostorIds = lobby.impostorIds;
+    const roundScores = {}; // userId -> points gained this round
+    const voteDetails = []; // info for UI
+
+    lobby.players.forEach(player => {
+        const targetId = lobby.votes[player.userId];
+        const playerIsImpostor = impostorIds.includes(player.id);
+        let pointsGained = 0;
+        
+        if (!playerIsImpostor) {
+            // Innocent player: +10 if they voted for an impostor
+            const targetPlayer = lobby.players.find(p => p.userId === targetId);
+            if (targetPlayer && impostorIds.includes(targetPlayer.id)) {
+                pointsGained = 10;
+            }
+        }
+        
+        roundScores[player.userId] = pointsGained;
+        voteDetails.push({
+            voterId: player.userId,
+            voterName: player.name,
+            targetId: targetId,
+            targetName: lobby.players.find(p => p.userId === targetId)?.name || 'None'
+        });
+    });
+
+    // Impostors get +5 for every vote on an innocent
+    const innocentVotes = Object.values(lobby.votes).filter(targetUserId => {
+        const targetPlayer = lobby.players.find(p => p.userId === targetUserId);
+        return targetPlayer && !impostorIds.includes(targetPlayer.id);
+    }).length;
+
+    if (innocentVotes > 0) {
+        const pointsForImpostors = innocentVotes * 5;
+        impostorIds.forEach(impostorSocketId => {
+            const impostor = lobby.players.find(p => p.id === impostorSocketId);
+            if (impostor) {
+                roundScores[impostor.userId] = (roundScores[impostor.userId] || 0) + pointsForImpostors;
+            }
+        });
+    }
+
+    // Apply round scores to total scores
+    for (const userId in roundScores) {
+        lobby.scores[userId] = (lobby.scores[userId] || 0) + roundScores[userId];
+    }
+
+    lobby.roundResults = {
+        roundScores,
+        voteDetails,
+        impostorNames: lobby.players.filter(p => impostorIds.includes(p.id)).map(p => p.name)
+    };
+    lobby.status = 'results';
+
+    return { lobby };
+  }
+
+  endGame(lobbyId, requesterId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { error: 'Lobby not found' };
+    if (lobby.hostId !== requesterId) return { error: 'Only host can end game' };
+
+    lobby.status = 'ended';
     return { lobby };
   }
 

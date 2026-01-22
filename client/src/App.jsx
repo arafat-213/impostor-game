@@ -3,6 +3,7 @@ import io from 'socket.io-client';
 import Home from './components/Home';
 import Lobby from './components/Lobby';
 import Game from './components/Game';
+import Leaderboard from './components/Leaderboard';
 import './App.css';
 
 // Initialize socket outside component to prevent multiple connections
@@ -46,8 +47,10 @@ function App() {
         sessionStorage.setItem('impostor_lobbyId', updatedLobby.id);
       }
 
-      if (updatedLobby.status === 'playing') {
+      if (updatedLobby.status === 'playing' || updatedLobby.status === 'voting' || updatedLobby.status === 'results') {
         setGameState('game');
+      } else if (updatedLobby.status === 'ended') {
+        setGameState('ended');
       } else if (gameState === 'home') {
         setGameState('lobby');
         setError('');
@@ -110,6 +113,24 @@ function App() {
     if (lobby) socket.emit('update_settings', { lobbyId: lobby.id, settings });
   };
 
+  const startVoting = () => {
+    if (lobby) socket.emit('start_voting', { lobbyId: lobby.id });
+  };
+
+  const submitVote = (targetUserId) => {
+    if (lobby) socket.emit('submit_vote', { lobbyId: lobby.id, userId, targetUserId });
+  };
+
+  const endGame = () => {
+    if (lobby) socket.emit('end_game', { lobbyId: lobby.id });
+  };
+
+  const resetGame = () => {
+    setGameState('lobby');
+    // Scores are already in lobby.scores, host can start next round or we could reset scores here if needed
+    // For now, just going back to lobby state is enough as the lobby is still there.
+  };
+
   return (
     <>
       <div className="status-bar">
@@ -146,7 +167,18 @@ function App() {
         <Game 
           lobby={lobby} 
           myId={myId} 
+          userId={userId}
           onNextRound={startNextRound}
+          onStartVoting={startVoting}
+          onSubmitVote={submitVote}
+          onEndGame={endGame}
+        />
+      )}
+
+      {gameState === 'ended' && lobby && (
+        <Leaderboard
+          lobby={lobby}
+          onReset={resetGame}
         />
       )}
     </>

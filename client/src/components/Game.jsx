@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
-function Game({ lobby, myId, onNextRound }) {
+function Game({ lobby, myId, userId, onNextRound, onStartVoting, onSubmitVote, onEndGame }) {
   const [revealed, setRevealed] = useState(false);
+  const hasVoted = lobby.votes && lobby.votes[userId];
   
   // Support for multiple impostors
   const isImpostor = lobby.impostorIds 
@@ -14,6 +15,107 @@ function Game({ lobby, myId, onNextRound }) {
   useEffect(() => {
     setRevealed(false);
   }, [lobby.word, lobby.impostorId, lobby.impostorIds]);
+
+  if (lobby.status === 'voting') {
+    return (
+      <div className="card fade-in">
+        <h2 style={{ color: 'var(--primary-color)' }}>VOTING TIME</h2>
+        <p>Discuss and decide: Who is the Impostor?</p>
+
+        <div style={{ width: '100%', margin: '1.5rem 0' }}>
+          {lobby.players.map(player => (
+            <div
+              key={player.userId}
+              className={`vote-item ${hasVoted ? 'disabled' : ''}`}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px',
+                marginBottom: '10px',
+                background: player.userId === userId ? 'rgba(255,255,255,0.05)' : '#222',
+                borderRadius: '8px',
+                border: lobby.votes && lobby.votes[userId] === player.userId ? '1px solid var(--primary-color)' : '1px solid transparent'
+              }}
+            >
+              <span>{player.name} {player.userId === userId && '(YOU)'}</span>
+              {player.userId !== userId && !hasVoted && (
+                <button
+                  onClick={() => onSubmitVote(player.userId)}
+                  className="small"
+                  style={{ width: 'auto', margin: 0, padding: '5px 15px' }}
+                >
+                  Vote
+                </button>
+              )}
+              {lobby.votes && lobby.votes[player.userId] && (
+                <span style={{ fontSize: '0.8rem', opacity: 0.5 }}>✓ Voted</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {hasVoted && (
+          <p className="pulse" style={{ color: 'var(--secondary-color)' }}>
+            Waiting for others to vote...
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (lobby.status === 'results') {
+    return (
+      <div className="card fade-in">
+        <h2 style={{ color: 'var(--primary-color)' }}>ROUND RESULTS</h2>
+
+        <div style={{ width: '100%', margin: '1rem 0', textAlign: 'left' }}>
+          <h3 style={{ color: 'var(--error-color)' }}>
+            Impostor{lobby.roundResults.impostorNames.length > 1 ? 's' : ''}:
+            <span style={{ color: 'white' }}> {lobby.roundResults.impostorNames.join(', ')}</span>
+          </h3>
+
+          <div style={{ marginTop: '1.5rem' }}>
+            <h4>Votes Cast:</h4>
+            {lobby.roundResults.voteDetails.map((vote, i) => (
+              <p key={i} style={{ fontSize: '0.9rem', marginBottom: '5px' }}>
+                <strong>{vote.voterName}</strong> voted for <strong>{vote.targetName}</strong>
+              </p>
+            ))}
+          </div>
+
+          <div style={{ marginTop: '1.5rem', borderTop: '1px solid #333', paddingTop: '10px' }}>
+            <h4>Points Gained:</h4>
+            {lobby.players.map(p => (
+              <div key={p.userId} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{p.name}</span>
+                <span style={{ color: (lobby.roundResults.roundScores[p.userId] || 0) > 0 ? 'var(--secondary-color)' : 'grey' }}>
+                  +{lobby.roundResults.roundScores[p.userId] || 0}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {isHost && (
+          <div style={{ display: 'flex', gap: '10px', width: '100%', marginTop: 'auto' }}>
+            <button
+              onClick={onNextRound}
+              style={{ backgroundColor: 'var(--secondary-color)', color: 'black' }}
+            >
+              Next Round
+            </button>
+            <button
+              onClick={onEndGame}
+              style={{ backgroundColor: 'var(--error-color)' }}
+            >
+              End Game
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="card fade-in" style={{ minHeight: '60vh', justifyContent: 'center' }}>
@@ -85,10 +187,10 @@ function Game({ lobby, myId, onNextRound }) {
           borderTop: '1px solid rgba(255,255,255,0.1)' 
         }}>
             <button 
-              onClick={onNextRound} 
-              style={{ backgroundColor: 'var(--secondary-color)', color: 'black' }}
+            onClick={onStartVoting}
+            style={{ backgroundColor: 'var(--primary-color)', color: 'black' }}
             >
-                Start Next Round
+            Start Voting
             </button>
         </div>
       )}
