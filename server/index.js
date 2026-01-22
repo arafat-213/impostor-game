@@ -23,17 +23,17 @@ const io = new Server(server, {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  socket.on('create_lobby', ({ playerName }) => {
-    const lobbyId = gameManager.createLobby(socket.id, playerName);
+  socket.on('create_lobby', ({ playerName, userId }) => {
+    const lobbyId = gameManager.createLobby(socket.id, playerName, userId);
     socket.join(lobbyId);
     console.log(`Lobby ${lobbyId} created by ${playerName}`);
     io.to(lobbyId).emit('lobby_update', gameManager.lobbies.get(lobbyId));
   });
 
-  socket.on('join_lobby', ({ lobbyId, playerName }) => {
+  socket.on('join_lobby', ({ lobbyId, playerName, userId }) => {
     // Normalize lobbyId
     const safeLobbyId = lobbyId.toUpperCase();
-    const result = gameManager.joinLobby(safeLobbyId, socket.id, playerName);
+    const result = gameManager.joinLobby(safeLobbyId, socket.id, playerName, userId);
     
     if (result.error) {
       socket.emit('error_message', result.error);
@@ -93,7 +93,12 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    const result = gameManager.removePlayer(socket.id);
+    const result = gameManager.removePlayer(socket.id, (finalResult) => {
+        if (!finalResult.empty) {
+           io.to(finalResult.lobbyId).emit('lobby_update', finalResult.lobby);
+        }
+    });
+    
     if (result) {
       if (!result.empty) {
          io.to(result.lobbyId).emit('lobby_update', result.lobby);

@@ -5,13 +5,14 @@ class GameManager {
   constructor() {
     this.lobbies = new Map(); // lobbyId -> { players: [], status, word, impostorId, hostId }
     this.words = JSON.parse(fs.readFileSync(path.join(__dirname, 'words.json'), 'utf8'));
+    this.disconnectTimeouts = new Map(); // userId -> timeoutId
   }
 
-  createLobby(hostId, hostName) {
+  createLobby(hostId, hostName, userId) {
     const lobbyId = Math.random().toString(36).substring(2, 8).toUpperCase();
     this.lobbies.set(lobbyId, {
       id: lobbyId,
-      players: [{ id: hostId, name: hostName }],
+      players: [{ id: hostId, name: hostName, userId, connected: true }],
       hostId: hostId,
       status: 'waiting',
       word: null,
@@ -24,15 +25,38 @@ class GameManager {
     return lobbyId;
   }
 
-  joinLobby(lobbyId, playerId, playerName) {
+  joinLobby(lobbyId, playerId, playerName, userId) {
     const lobby = this.lobbies.get(lobbyId);
     if (!lobby) return { error: 'Lobby not found' };
+    
+    // Check for reconnection
+    const existingPlayer = lobby.players.find(p => p.userId === userId);
+    if (existingPlayer) {
+        const oldSocketId = existingPlayer.id;
+        existingPlayer.id = playerId;
+        existingPlayer.name = playerName; // Update name in case it changed (optional)
+        existingPlayer.connected = true;
+        
+        // Update hostId if necessary
+        if (lobby.hostId === oldSocketId) {
+            lobby.hostId = playerId;
+        }
+
+        // Cancel disconnect timeout
+        if (this.disconnectTimeouts.has(userId)) {
+            clearTimeout(this.disconnectTimeouts.get(userId));
+            this.disconnectTimeouts.delete(userId);
+        }
+        
+        return { lobby };
+    }
+
     if (lobby.status !== 'waiting') return { error: 'Game already started' };
     
     // Check if player name already exists (optional, but good for UX)
     // For now simple join
     
-    lobby.players.push({ id: playerId, name: playerName });
+    lobby.players.push({ id: playerId, name: playerName, userId, connected: true });
     return { lobby };
   }
 
@@ -111,27 +135,60 @@ class GameManager {
     return this.startGame(lobbyId, requesterId);
   }
   
-  removePlayer(socketId) {
-    // Find which lobby the player is in and remove them
+  removePlayer(socketId, onTimeout) {
+    // Find which lobby the player is in
     for (const [lobbyId, lobby] of this.lobbies.entries()) {
       const playerIndex = lobby.players.findIndex(p => p.id === socketId);
       if (playerIndex !== -1) {
-        lobby.players.splice(playerIndex, 1);
+        const player = lobby.players[playerIndex];
+        player.connected = false; // Mark as disconnected
         
-        // If host left, assign new host or delete lobby
-        if (lobby.players.length === 0) {
-          this.lobbies.delete(lobbyId);
-          return { lobbyId, empty: true };
+        // Schedule final removal
+        if (this.disconnectTimeouts.has(player.userId)) {
+            clearTimeout(this.disconnectTimeouts.get(player.userId));
         }
+
+        const timeoutId = setTimeout(() => {
+            this.finalRemove(lobbyId, player.userId, onTimeout);
+        }, 10000); // 10 seconds grace period
         
-        if (lobby.hostId === socketId) {
-          lobby.hostId = lobby.players[0].id;
-        }
+        this.disconnectTimeouts.set(player.userId, timeoutId);
         
-        return { lobbyId, lobby };
+        return { lobbyId, lobby, type: 'disconnect_pending' };
       }
     }
     return null;
+  }
+
+  finalRemove(lobbyId, userId, callback) {
+      const lobby = this.lobbies.get(lobbyId);
+      if (!lobby) return;
+
+      const playerIndex = lobby.players.findIndex(p => p.userId === userId);
+      if (playerIndex !== -1) {
+          // Verify they are still disconnected before removing
+          if (lobby.players[playerIndex].connected) return;
+
+          lobby.players.splice(playerIndex, 1);
+          this.disconnectTimeouts.delete(userId);
+
+          let result = { lobbyId, lobby, empty: false };
+
+          if (lobby.players.length === 0) {
+              this.lobbies.delete(lobbyId);
+              result.empty = true;
+          } else {
+               // Assign new host if needed
+               // Use socketId for hostId comparison as per current structure
+               // Note: player removed was at playerIndex. We need to check if current host is valid.
+               const hostExists = lobby.players.find(p => p.id === lobby.hostId);
+               if (!hostExists && lobby.players.length > 0) {
+                   lobby.hostId = lobby.players[0].id;
+               }
+          }
+
+          if (callback) callback(result);
+      }
   }
 }
 

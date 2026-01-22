@@ -13,6 +13,23 @@ function App() {
   const [lobby, setLobby] = useState(null);
   const [error, setError] = useState('');
   const [myId, setMyId] = useState('');
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [userId] = useState(() => {
+    const saved = localStorage.getItem('impostor_userId');
+    if (saved) return saved;
+    const newId = 'user_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('impostor_userId', newId);
+    return newId;
+  });
+
+  useEffect(() => {
+    const lastLobby = sessionStorage.getItem('impostor_lobbyId');
+    const savedName = localStorage.getItem('impostor_name');
+    if (lastLobby && savedName && gameState === 'home') {
+      setIsReconnecting(true);
+      socket.emit('join_lobby', { lobbyId: lastLobby, playerName: savedName, userId });
+    }
+  }, []);
 
   useEffect(() => {
     socket.on('connect', () => {
@@ -23,7 +40,15 @@ function App() {
     socket.on('lobby_update', (updatedLobby) => {
       console.log('Lobby updated:', updatedLobby);
       setLobby(updatedLobby);
-      if (gameState === 'home') {
+      setIsReconnecting(false);
+      // Save lobby ID for reconnection
+      if (updatedLobby?.id) {
+        sessionStorage.setItem('impostor_lobbyId', updatedLobby.id);
+      }
+
+      if (updatedLobby.status === 'playing') {
+        setGameState('game');
+      } else if (gameState === 'home') {
         setGameState('lobby');
         setError('');
       }
@@ -37,6 +62,10 @@ function App() {
 
     socket.on('error_message', (msg) => {
       setError(msg);
+      setIsReconnecting(false);
+      if (msg === 'Lobby not found' || msg === 'Game already started') {
+        sessionStorage.removeItem('impostor_lobbyId');
+      }
     });
 
     return () => {
@@ -48,11 +77,13 @@ function App() {
   }, [gameState]);
 
   const createLobby = (playerName) => {
-    socket.emit('create_lobby', { playerName });
+    localStorage.setItem('impostor_name', playerName);
+    socket.emit('create_lobby', { playerName, userId });
   };
 
   const joinLobby = (lobbyId, playerName) => {
-    socket.emit('join_lobby', { lobbyId, playerName });
+    localStorage.setItem('impostor_name', playerName);
+    socket.emit('join_lobby', { lobbyId, playerName, userId });
   };
 
   const startGame = () => {
@@ -85,7 +116,14 @@ function App() {
         Status: {socket.connected ? 'Connected' : 'Disconnected'} | ID: {myId}
       </div>
       
-      {gameState === 'home' && (
+      {isReconnecting && (
+        <div className="card fade-in" style={{ textAlign: 'center', marginTop: '2rem' }}>
+          <h2>Reconnecting...</h2>
+          <p>Returning you to the shadows.</p>
+        </div>
+      )}
+
+      {!isReconnecting && gameState === 'home' && (
         <Home 
             onCreateLobby={createLobby} 
             onJoinLobby={joinLobby} 

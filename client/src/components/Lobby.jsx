@@ -123,8 +123,8 @@ function Lobby({ lobby, onStartGame, myId, onAddWord, onRemoveWord, onUpdateSett
             <h3 style={{ textAlign: 'left' }}>Players ({lobby.players.length})</h3>
             <ul>
             {lobby.players.map(p => (
-                <li key={p.id}>
-                <span>{p.name}</span>
+              <li key={p.id} style={{ opacity: p.connected ? 1 : 0.5 }}>
+                <span>{p.name} {!p.connected && '(Disconnected)'}</span>
                 <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>
                     {p.id === lobby.hostId ? '👑 ' : ''}
                     {p.id === myId ? '(YOU)' : ''}
@@ -137,9 +137,9 @@ function Lobby({ lobby, onStartGame, myId, onAddWord, onRemoveWord, onUpdateSett
 
       <div style={{ marginTop: 'auto', width: '100%' }}>
         {isHost ? (
-          <button onClick={onStartGame} disabled={lobby.players.length < 3 || (lobby.words && lobby.words.length === 0)}>
-            {lobby.players.length < 3 
-                ? 'Waiting for 3 players...' 
+          <button onClick={onStartGame} disabled={lobby.players.filter(p => p.connected).length < 3 || (lobby.words && lobby.words.length === 0)}>
+            {lobby.players.filter(p => p.connected).length < 3
+              ? 'Waiting for 3 connected players...' 
                 : (lobby.words && lobby.words.length === 0) 
                     ? 'Add Words to Start'
                     : 'Start Game'}

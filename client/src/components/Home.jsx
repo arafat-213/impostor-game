@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 function Home({ onCreateLobby, onJoinLobby, error }) {
-  const [name, setName] = useState('');
+  const [name, setName] = useState(localStorage.getItem('impostor_name') || '');
   const [lobbyId, setLobbyId] = useState('');
 
   return (
