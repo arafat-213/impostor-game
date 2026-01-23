@@ -120,7 +120,7 @@ function Game({
         padding: '10px',
         background: isMyTurn ? 'rgba(3, 218, 198, 0.1)' : 'rgba(255,255,255,0.05)',
         borderRadius: '8px',
-        marginBottom: '1rem',
+        margin: '1.5rem 0',
         border: isMyTurn ? '1px solid var(--secondary-color)' : '1px solid transparent',
         textAlign: 'center'
       }}>
