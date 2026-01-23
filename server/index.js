@@ -118,6 +118,42 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('kick_player', ({ lobbyId, targetUserId }) => {
+    const result = gameManager.kickPlayer(lobbyId, socket.id, targetUserId);
+    if (result.error) {
+      socket.emit('error_message', result.error);
+    } else {
+      io.to(lobbyId).emit('lobby_update', result.lobby);
+      io.to(result.kickedSocketId).emit('kicked');
+    }
+  });
+
+  socket.on('leave_game', ({ lobbyId }) => {
+    const result = gameManager.leaveLobby(lobbyId, socket.id);
+    if (result) {
+      socket.leave(lobbyId);
+      if (!result.empty) {
+        io.to(lobbyId).emit('lobby_update', result.lobby);
+      }
+    }
+  });
+
+  socket.on('next_turn', ({ lobbyId }) => {
+    const result = gameManager.nextTurn(lobbyId, socket.id);
+    if (result.error) {
+        socket.emit('error_message', result.error);
+    } else {
+        io.to(lobbyId).emit('lobby_update', result.lobby);
+    }
+  });
+
+  socket.on('send_message', ({ lobbyId, userId, text }) => {
+    const result = gameManager.addMessage(lobbyId, userId, text);
+    if (result) {
+        io.to(lobbyId).emit('lobby_update', result.lobby);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     const result = gameManager.removePlayer(socket.id, (finalResult) => {

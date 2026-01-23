@@ -71,11 +71,19 @@ function App() {
       }
     });
 
+    socket.on('kicked', () => {
+      setGameState('home');
+      setLobby(null);
+      setError('You have been kicked from the lobby.');
+      sessionStorage.removeItem('impostor_lobbyId');
+    });
+
     return () => {
       socket.off('connect');
       socket.off('lobby_update');
       socket.off('game_started');
       socket.off('error_message');
+      socket.off('kicked');
     };
   }, [gameState]);
 
@@ -125,10 +133,33 @@ function App() {
     if (lobby) socket.emit('end_game', { lobbyId: lobby.id });
   };
 
+  const handleNextTurn = () => {
+    if (lobby) socket.emit('next_turn', { lobbyId: lobby.id });
+  };
+
+  const handleSendMessage = (text) => {
+    if (lobby) socket.emit('send_message', { lobbyId: lobby.id, userId, text });
+  };
+
   const resetGame = () => {
     setGameState('lobby');
     // Scores are already in lobby.scores, host can start next round or we could reset scores here if needed
     // For now, just going back to lobby state is enough as the lobby is still there.
+  };
+
+  const leaveGame = () => {
+    if (lobby) {
+      socket.emit('leave_game', { lobbyId: lobby.id });
+    }
+    setGameState('home');
+    setLobby(null);
+    sessionStorage.removeItem('impostor_lobbyId');
+  };
+
+  const kickPlayer = (targetUserId) => {
+    if (lobby) {
+      socket.emit('kick_player', { lobbyId: lobby.id, targetUserId });
+    }
   };
 
   return (
@@ -160,6 +191,8 @@ function App() {
           onAddWord={handleAddWord}
           onRemoveWord={handleRemoveWord}
           onUpdateSettings={handleUpdateSettings}
+          onLeaveGame={leaveGame}
+          onKickPlayer={kickPlayer}
         />
       )}
       
@@ -172,6 +205,10 @@ function App() {
           onStartVoting={startVoting}
           onSubmitVote={submitVote}
           onEndGame={endGame}
+          onLeaveGame={leaveGame}
+          onKickPlayer={kickPlayer}
+          onNextTurn={handleNextTurn}
+          onSendMessage={handleSendMessage}
         />
       )}
 
@@ -179,6 +216,7 @@ function App() {
         <Leaderboard
           lobby={lobby}
           onReset={resetGame}
+          onLeaveGame={leaveGame}
         />
       )}
     </>

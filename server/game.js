@@ -10,6 +10,7 @@ class GameManager {
 
   createLobby(hostId, hostName, userId) {
     const lobbyId = Math.random().toString(36).substring(2, 8).toUpperCase();
+
     this.lobbies.set(lobbyId, {
       id: lobbyId,
       players: [{ id: hostId, name: hostName, userId, connected: true }],
@@ -17,13 +18,16 @@ class GameManager {
       status: 'waiting',
       word: null,
       impostorIds: [],
-      words: [...this.words], // Copy default words to lobby
+      words: [...this.words], 
       settings: {
         impostorCount: 1
       },
       scores: { [userId]: 0 }, // userId -> points
       votes: {}, // userId -> targetUserId
-      roundResults: null
+      roundResults: null,
+      messages: [],
+      turnOrder: [],
+      currentPlayerIndex: -1
     });
     return lobbyId;
   }
@@ -115,9 +119,15 @@ class GameManager {
         return { error: `Too many impostors! Max ${lobby.players.length - 1}` };
     }
 
-    // Select random word from lobby's custom list
+    // Select random word from lobby's current list
     const randomWord = lobby.words[Math.floor(Math.random() * lobby.words.length)];
     lobby.word = randomWord;
+
+    // Reset game state
+    lobby.status = 'playing';
+    lobby.votes = {};
+    lobby.roundResults = null;
+    lobby.messages = [];
 
     // Select multiple unique impostors
     const playersCopy = [...lobby.players];
@@ -129,12 +139,17 @@ class GameManager {
         playersCopy.splice(randomIndex, 1);
     }
     
+    // Set Turn Order (Shuffled)
+    lobby.turnOrder = lobby.players
+        .filter(p => p.connected)
+        .map(p => p.userId)
+        .sort(() => Math.random() - 0.5);
+    lobby.currentPlayerIndex = 0;
+
     // Backward compatibility for MVP if needed, but better to update client
     lobby.impostorId = lobby.impostorIds[0]; 
 
-    lobby.status = 'playing';
-    lobby.votes = {};
-    lobby.roundResults = null;
+    this.addSystemMessage(lobbyId, `Game started! Role: Describe the word without giving it away.`);
 
     return { lobby };
   }
@@ -175,6 +190,35 @@ class GameManager {
     const roundScores = {}; // userId -> points gained this round
     const voteDetails = []; // info for UI
 
+    // 1. Calculate vote counts
+    const voteCounts = {}; // userId -> count
+    lobby.players.forEach(p => {
+        const targetId = lobby.votes[p.userId];
+        if (targetId) {
+            voteCounts[targetId] = (voteCounts[targetId] || 0) + 1;
+        }
+    });
+
+    // 2. Determine who got the most votes
+    let maxVotes = 0;
+    for (const userId in voteCounts) {
+        if (voteCounts[userId] > maxVotes) {
+            maxVotes = voteCounts[userId];
+        }
+    }
+
+    // Players with max votes (if any)
+    const mostVotedUserIds = maxVotes > 0 
+        ? Object.keys(voteCounts).filter(userId => voteCounts[userId] === maxVotes)
+        : [];
+
+    // 3. Calculate points for everyone
+    // Count votes that fell on innocent players
+    const innocentVotes = Object.values(lobby.votes).filter(targetUserId => {
+        const targetPlayer = lobby.players.find(p => p.userId === targetUserId);
+        return targetPlayer && !impostorIds.includes(targetPlayer.id);
+    }).length;
+
     lobby.players.forEach(player => {
         const targetId = lobby.votes[player.userId];
         const playerIsImpostor = impostorIds.includes(player.id);
@@ -186,6 +230,15 @@ class GameManager {
             if (targetPlayer && impostorIds.includes(targetPlayer.id)) {
                 pointsGained = 10;
             }
+        } else {
+            // Impostor player: +5 for every vote on an innocent, BUT only if they are NOT caught
+            // They are caught if they are among the most voted
+            const isCaught = mostVotedUserIds.includes(player.userId);
+            if (!isCaught) {
+                pointsGained = innocentVotes * 5;
+            } else {
+                pointsGained = 0;
+            }
         }
         
         roundScores[player.userId] = pointsGained;
@@ -196,22 +249,6 @@ class GameManager {
             targetName: lobby.players.find(p => p.userId === targetId)?.name || 'None'
         });
     });
-
-    // Impostors get +5 for every vote on an innocent
-    const innocentVotes = Object.values(lobby.votes).filter(targetUserId => {
-        const targetPlayer = lobby.players.find(p => p.userId === targetUserId);
-        return targetPlayer && !impostorIds.includes(targetPlayer.id);
-    }).length;
-
-    if (innocentVotes > 0) {
-        const pointsForImpostors = innocentVotes * 5;
-        impostorIds.forEach(impostorSocketId => {
-            const impostor = lobby.players.find(p => p.id === impostorSocketId);
-            if (impostor) {
-                roundScores[impostor.userId] = (roundScores[impostor.userId] || 0) + pointsForImpostors;
-            }
-        });
-    }
 
     // Apply round scores to total scores
     for (const userId in roundScores) {
@@ -295,6 +332,102 @@ class GameManager {
 
           if (callback) callback(result);
       }
+  }
+
+  kickPlayer(lobbyId, hostId, targetUserId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { error: 'Lobby not found' };
+    if (lobby.hostId !== hostId) return { error: 'Only host can kick players' };
+
+    const playerIndex = lobby.players.findIndex(p => p.userId === targetUserId);
+    if (playerIndex === -1) return { error: 'Player not found' };
+    
+    const kickedSocketId = lobby.players[playerIndex].id;
+    if (kickedSocketId === hostId) return { error: 'Cannot kick yourself' };
+
+    lobby.players.splice(playerIndex, 1);
+    this.disconnectTimeouts.delete(targetUserId);
+
+    return { lobby, kickedSocketId };
+  }
+
+  leaveLobby(lobbyId, socketId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return null;
+
+    const playerIndex = lobby.players.findIndex(p => p.id === socketId);
+    if (playerIndex !== -1) {
+        const userId = lobby.players[playerIndex].userId;
+        lobby.players.splice(playerIndex, 1);
+        this.disconnectTimeouts.delete(userId);
+
+        if (lobby.players.length === 0) {
+            this.lobbies.delete(lobbyId);
+            return { empty: true };
+        } else {
+            if (lobby.hostId === socketId) {
+                lobby.hostId = lobby.players[0].id;
+            }
+            return { lobby, empty: false };
+        }
+    }
+    return null;
+  }
+
+  nextTurn(lobbyId, requesterId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { error: 'Lobby not found' };
+    if (lobby.hostId !== requesterId) return { error: 'Only host can advance turns' };
+    
+    lobby.currentPlayerIndex++;
+    if (lobby.currentPlayerIndex >= lobby.turnOrder.length) {
+        this.addSystemMessage(lobbyId, "All players have described the word. Host can now start voting.");
+        return { lobby, allTurnsDone: true };
+    }
+
+    const currentPlayerId = lobby.turnOrder[lobby.currentPlayerIndex];
+    const currentPlayer = lobby.players.find(p => p.userId === currentPlayerId);
+    this.addSystemMessage(lobbyId, `It's ${currentPlayer?.name}'s turn to describe!`);
+
+    return { lobby, allTurnsDone: false };
+  }
+
+  addMessage(lobbyId, userId, text) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return null;
+
+    const player = lobby.players.find(p => p.userId === userId);
+    const message = {
+        userId,
+        playerName: player?.name || 'Unknown',
+        text,
+        timestamp: Date.now(),
+        type: 'chat'
+    };
+    
+    lobby.messages.push(message);
+    // Keep last 50 messages
+    if (lobby.messages.length > 50) lobby.messages.shift();
+    
+    return { lobby, message };
+  }
+
+  addSystemMessage(lobbyId, text) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return null;
+
+    const message = {
+        userId: 'system',
+        playerName: 'System',
+        text,
+        timestamp: Date.now(),
+        type: 'system'
+    };
+    
+    lobby.messages.push(message);
+    if (lobby.messages.length > 50) lobby.messages.shift();
+    
+    return { lobby, message };
   }
 }
 

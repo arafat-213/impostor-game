@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import GuideModal from './GuideModal';
+import ManagePlayersModal from './ManagePlayersModal';
+import Chat from './Chat';
 
-function Game({ lobby, myId, userId, onNextRound, onStartVoting, onSubmitVote, onEndGame }) {
+function Game({
+  lobby, myId, userId,
+  onNextRound, onStartVoting, onSubmitVote,
+  onEndGame, onLeaveGame, onKickPlayer,
+  onNextTurn, onSendMessage
+}) {
   const [revealed, setRevealed] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [showManagePlayers, setShowManagePlayers] = useState(false);
   const hasVoted = lobby.votes && lobby.votes[userId];
   
   // Support for multiple impostors
@@ -16,9 +26,137 @@ function Game({ lobby, myId, userId, onNextRound, onStartVoting, onSubmitVote, o
     setRevealed(false);
   }, [lobby.word, lobby.impostorId, lobby.impostorIds]);
 
+  const currentPlayerId = lobby.turnOrder[lobby.currentPlayerIndex];
+  const isMyTurn = currentPlayerId === userId;
+  const currentPlayer = lobby.players.find(p => p.userId === currentPlayerId);
+
+  const renderHostManageButton = () => {
+    if (!isHost) return null;
+    return (
+      <button
+        onClick={() => setShowManagePlayers(true)}
+        style={{
+          position: 'absolute',
+          top: '15px',
+          left: '15px',
+          width: 'auto',
+          padding: '5px 12px',
+          margin: 0,
+          fontSize: '0.8rem',
+          background: 'transparent',
+          border: '1px solid var(--error-color)',
+          color: 'var(--error-color)',
+          zIndex: 10
+        }}
+      >
+        ⚙ Manage
+      </button>
+    );
+  };
+
+  const renderGuideButton = () => {
+    return (
+      <button
+        onClick={() => setShowGuide(true)}
+        style={{
+          position: 'absolute',
+          top: '15px',
+          right: '15px',
+          width: 'auto',
+          padding: '5px 12px',
+          margin: 0,
+          fontSize: '0.8rem',
+          background: 'transparent',
+          border: '1px solid var(--primary-color)',
+          color: 'var(--primary-color)',
+          zIndex: 10
+        }}
+      >
+        ?
+      </button>
+    );
+  };
+
+  const renderModals = () => {
+    return (
+      <>
+        <GuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
+        <ManagePlayersModal
+          isOpen={showManagePlayers}
+          onClose={() => setShowManagePlayers(false)}
+          players={lobby.players}
+          onKickPlayer={onKickPlayer}
+          myId={myId}
+        />
+      </>
+    );
+  };
+
+  const renderLeaveButton = () => {
+    return (
+      <button
+        onClick={onLeaveGame}
+        style={{
+          marginTop: '1.5rem',
+          background: 'transparent',
+          color: 'var(--text-secondary)',
+          border: '1px solid #333',
+          fontSize: '0.8rem',
+          padding: '8px 16px',
+          width: 'auto',
+          flexShrink: 0
+        }}
+      >
+        Leave Game
+      </button>
+    );
+  };
+
+  const renderTurnIndicator = () => {
+    if (lobby.status !== 'playing') return null;
+    return (
+      <div style={{
+        width: '100%',
+        padding: '10px',
+        background: isMyTurn ? 'rgba(3, 218, 198, 0.1)' : 'rgba(255,255,255,0.05)',
+        borderRadius: '8px',
+        marginBottom: '1rem',
+        border: isMyTurn ? '1px solid var(--secondary-color)' : '1px solid transparent',
+        textAlign: 'center'
+      }}>
+        <p style={{ margin: 0, fontSize: '0.9rem' }}>
+          {isMyTurn ? (
+            <strong style={{ color: 'var(--secondary-color)' }}>IT'S YOUR TURN!</strong>
+          ) : (
+            <span>Current Turn: <strong>{currentPlayer?.name}</strong></span>
+          )}
+        </p>
+        {isHost && (
+          <button
+            onClick={onNextTurn}
+            style={{
+              width: 'auto',
+              padding: '4px 12px',
+              fontSize: '0.7rem',
+              marginTop: '8px',
+              background: 'var(--secondary-color)',
+              color: 'black'
+            }}
+          >
+            Next Turn ➜
+          </button>
+        )}
+      </div>
+    );
+  };
+
   if (lobby.status === 'voting') {
     return (
-      <div className="card fade-in">
+      <div className="card fade-in" style={{ position: 'relative' }}>
+        {renderHostManageButton()}
+        {renderGuideButton()}
+        {renderModals()}
+
         <h2 style={{ color: 'var(--primary-color)' }}>VOTING TIME</h2>
         <p>Discuss and decide: Who is the Impostor?</p>
 
@@ -60,13 +198,20 @@ function Game({ lobby, myId, userId, onNextRound, onStartVoting, onSubmitVote, o
             Waiting for others to vote...
           </p>
         )}
+
+        <Chat messages={lobby.messages} onSendMessage={onSendMessage} userId={userId} />
+        {renderLeaveButton()}
       </div>
     );
   }
 
   if (lobby.status === 'results') {
     return (
-      <div className="card fade-in">
+      <div className="card fade-in" style={{ position: 'relative' }}>
+        {renderHostManageButton()}
+        {renderGuideButton()}
+        {renderModals()}
+
         <h2 style={{ color: 'var(--primary-color)' }}>ROUND RESULTS</h2>
 
         <div style={{ width: '100%', margin: '1rem 0', textAlign: 'left' }}>
@@ -113,14 +258,24 @@ function Game({ lobby, myId, userId, onNextRound, onStartVoting, onSubmitVote, o
             </button>
           </div>
         )}
+
+        <Chat messages={lobby.messages} onSendMessage={onSendMessage} userId={userId} />
+        {renderLeaveButton()}
       </div>
     );
   }
 
   return (
-    <div className="card fade-in" style={{ minHeight: '60vh', justifyContent: 'center' }}>
+    <div className="card fade-in" style={{ minHeight: '60vh', justifyContent: 'center', position: 'relative' }}>
+      {renderHostManageButton()}
+      {renderGuideButton()}
+      {renderModals()}
+
+      {renderTurnIndicator()}
+
       {!revealed ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+          <p style={{ color: 'var(--secondary-color)', fontSize: '0.8rem' }}>CATEGORY: {lobby.selectedCategory}</p>
            <h2>Role Assigned</h2>
            <p>Only you can see this.</p>
            <button 
@@ -152,11 +307,13 @@ function Game({ lobby, myId, userId, onNextRound, onStartVoting, onSubmitVote, o
               }}>
                 THE IMPOSTOR
               </h1>
+                <p>Category: <strong>{lobby.selectedCategory}</strong></p>
               <p>Blend in. Don't get caught.</p>
             </div>
           ) : (
             <div style={{ marginBottom: '2rem' }}>
               <h2 style={{ color: 'var(--secondary-color)' }}>YOU ARE INNOCENT</h2>
+                  <p>Category: <strong>{lobby.selectedCategory}</strong></p>
               <p>The shared word is:</p>
                 <h1 style={{ 
                   fontSize: '3.5rem',
@@ -194,6 +351,9 @@ function Game({ lobby, myId, userId, onNextRound, onStartVoting, onSubmitVote, o
             </button>
         </div>
       )}
+
+      <Chat messages={lobby.messages} onSendMessage={onSendMessage} userId={userId} />
+      {renderLeaveButton()}
     </div>
   );
 }

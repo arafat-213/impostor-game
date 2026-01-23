@@ -1,6 +1,6 @@
 import React from 'react';
 
-function Leaderboard({ lobby, onReset }) {
+function Leaderboard({ lobby, onReset, onLeaveGame }) {
   // Sort players by score
   const sortedPlayers = [...lobby.players].sort((a, b) => {
     const scoreA = lobby.scores[a.userId] || 0;
@@ -53,6 +53,19 @@ function Leaderboard({ lobby, onReset }) {
         style={{ marginTop: '2.5rem', border: '1px solid #444' }}
       >
         Back to Lobby
+      </button>
+
+      <button
+        onClick={onLeaveGame}
+        style={{
+          marginTop: '1rem',
+          background: 'transparent',
+          color: 'var(--text-secondary)',
+          border: '1px solid #333',
+          fontSize: '0.9rem'
+        }}
+      >
+        Leave Game
       </button>
     </div>
   );

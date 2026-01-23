@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
+import GuideModal from './GuideModal';
+import ManagePlayersModal from './ManagePlayersModal';
 
-function Lobby({ lobby, onStartGame, myId, onAddWord, onRemoveWord, onUpdateSettings }) {
+function Lobby({ lobby, onStartGame, myId, onAddWord, onRemoveWord, onUpdateSettings, onLeaveGame, onKickPlayer }) {
   const isHost = lobby.hostId === myId;
   const [copied, setCopied] = useState(false);
   const [showWords, setShowWords] = useState(false);
   const [newWord, setNewWord] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
+  const [showManagePlayers, setShowManagePlayers] = useState(false);
 
   const copyCode = () => {
     navigator.clipboard.writeText(lobby.id);
@@ -28,7 +32,34 @@ function Lobby({ lobby, onStartGame, myId, onAddWord, onRemoveWord, onUpdateSett
   };
 
   return (
-    <div className="card fade-in">
+    <div className="card fade-in" style={{ position: 'relative' }}>
+      <button
+        onClick={() => setShowGuide(true)}
+        style={{
+          position: 'absolute',
+          top: '15px',
+          right: '15px',
+          width: 'auto',
+          padding: '5px 12px',
+          margin: 0,
+          fontSize: '0.8rem',
+          background: 'transparent',
+          border: '1px solid var(--primary-color)',
+          color: 'var(--primary-color)'
+        }}
+      >
+        How to play?
+      </button>
+
+      <GuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
+      <ManagePlayersModal
+        isOpen={showManagePlayers}
+        onClose={() => setShowManagePlayers(false)}
+        players={lobby.players}
+        onKickPlayer={onKickPlayer}
+        myId={myId}
+      />
+
       <h3 style={{ margin: 0 }}>Lobby Code</h3>
       <h1 
         onClick={copyCode} 
@@ -68,9 +99,9 @@ function Lobby({ lobby, onStartGame, myId, onAddWord, onRemoveWord, onUpdateSett
       )}
       
       {!isHost && lobby.settings && (
-         <div style={{ margin: '1rem 0', opacity: 0.7 }}>
-            Impostors: <strong>{lobby.settings.impostorCount}</strong>
-         </div>
+        <div style={{ margin: '1rem 0', opacity: 0.7, textAlign: 'center' }}>
+          <p>Impostors: <strong>{lobby.settings.impostorCount}</strong></p>
+        </div>
       )}
 
       {isHost && (
@@ -124,14 +155,32 @@ function Lobby({ lobby, onStartGame, myId, onAddWord, onRemoveWord, onUpdateSett
             <ul>
             {lobby.players.map(p => (
               <li key={p.id} style={{ opacity: p.connected ? 1 : 0.5 }}>
-                <span>{p.name} {!p.connected && '(Disconnected)'}</span>
-                <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>
-                    {p.id === lobby.hostId ? '👑 ' : ''}
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span>{p.name} {!p.connected && '(Disconnected)'}</span>
+                  <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>
+                    {p.id === lobby.hostId ? '👑 Host ' : ''}
                     {p.id === myId ? '(YOU)' : ''}
-                </span>
-                </li>
+                  </span>
+                </div>
+              </li>
             ))}
             </ul>
+            {isHost && (
+              <button
+                onClick={() => setShowManagePlayers(true)}
+                style={{
+                  marginTop: '1rem',
+                  background: 'transparent',
+                  border: '1px solid var(--error-color)',
+                  color: 'var(--error-color)',
+                  fontSize: '0.8rem',
+                  padding: '8px',
+                  width: 'auto'
+                }}
+              >
+                Manage Players / Kick
+              </button>
+            )}
         </div>
       )}
 
@@ -147,6 +196,19 @@ function Lobby({ lobby, onStartGame, myId, onAddWord, onRemoveWord, onUpdateSett
         ) : (
           <p className="pulse">Waiting for host to start...</p>
         )}
+
+        <button
+          onClick={onLeaveGame}
+          style={{
+            marginTop: '1rem',
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            border: '1px solid #333',
+            fontSize: '0.9rem'
+          }}
+        >
+          Leave Lobby
+        </button>
       </div>
     </div>
   );
