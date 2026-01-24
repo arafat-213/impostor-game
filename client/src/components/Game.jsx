@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import GuideModal from './GuideModal';
 import ManagePlayersModal from './ManagePlayersModal';
+import ScoreboardModal from './ScoreboardModal';
 import Chat from './Chat';
 
 function Game({
@@ -12,12 +13,13 @@ function Game({
   const [revealed, setRevealed] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showManagePlayers, setShowManagePlayers] = useState(false);
+  const [showScoreboard, setShowScoreboard] = useState(false);
   const hasVoted = lobby.votes && lobby.votes[userId];
   
   // Support for multiple impostors
   const isImpostor = lobby.impostorIds 
-    ? lobby.impostorIds.includes(myId) 
-    : lobby.impostorId === myId;
+    ? lobby.impostorIds.includes(userId)
+    : lobby.impostorId === userId;
     
   const isHost = lobby.hostId === myId;
 
@@ -56,24 +58,43 @@ function Game({
 
   const renderGuideButton = () => {
     return (
-      <button
-        onClick={() => setShowGuide(true)}
-        style={{
-          position: 'absolute',
-          top: '15px',
-          right: '15px',
-          width: 'auto',
-          padding: '5px 12px',
-          margin: 0,
-          fontSize: '0.8rem',
-          background: 'transparent',
-          border: '1px solid var(--primary-color)',
-          color: 'var(--primary-color)',
-          zIndex: 10
-        }}
-      >
-        ?
-      </button>
+      <div style={{
+        position: 'absolute',
+        top: '15px',
+        right: '15px',
+        display: 'flex',
+        gap: '8px',
+        zIndex: 10
+      }}>
+        <button
+          onClick={() => setShowScoreboard(true)}
+          style={{
+            width: 'auto',
+            padding: '5px 12px',
+            margin: 0,
+            fontSize: '0.8rem',
+            background: 'transparent',
+            border: '1px solid var(--secondary-color)',
+            color: 'var(--secondary-color)',
+          }}
+        >
+          🏆 Scores
+        </button>
+        <button
+          onClick={() => setShowGuide(true)}
+          style={{
+            width: 'auto',
+            padding: '5px 12px',
+            margin: 0,
+            fontSize: '0.8rem',
+            background: 'transparent',
+            border: '1px solid var(--primary-color)',
+            color: 'var(--primary-color)',
+          }}
+        >
+          ?
+        </button>
+      </div>
     );
   };
 
@@ -81,6 +102,11 @@ function Game({
     return (
       <>
         <GuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
+        <ScoreboardModal
+          isOpen={showScoreboard}
+          onClose={() => setShowScoreboard(false)}
+          lobby={lobby}
+        />
         <ManagePlayersModal
           isOpen={showManagePlayers}
           onClose={() => setShowManagePlayers(false)}
@@ -114,6 +140,8 @@ function Game({
 
   const renderTurnIndicator = () => {
     if (lobby.status !== 'playing') return null;
+    const allTurnsDone = lobby.currentPlayerIndex >= lobby.turnOrder.length;
+
     return (
       <div style={{
         width: '100%',
@@ -121,17 +149,22 @@ function Game({
         background: isMyTurn ? 'rgba(3, 218, 198, 0.1)' : 'rgba(255,255,255,0.05)',
         borderRadius: '8px',
         margin: '1.5rem 0',
-        border: isMyTurn ? '1px solid var(--secondary-color)' : '1px solid transparent',
+        border: isMyTurn ? '1px solid var(--secondary-color)' : (allTurnsDone ? '1px solid var(--primary-color)' : '1px solid transparent'),
         textAlign: 'center'
       }}>
         <p style={{ margin: 0, fontSize: '0.9rem' }}>
-          {isMyTurn ? (
+          {allTurnsDone ? (
+            <strong style={{ color: 'var(--primary-color)' }}>TIME TO CATCH THE IMPOSTOR!</strong>
+          ) : isMyTurn ? (
             <strong style={{ color: 'var(--secondary-color)' }}>IT'S YOUR TURN!</strong>
           ) : (
-            <span>Current Turn: <strong>{currentPlayer?.name}</strong></span>
+                <span>
+                  Current Turn: <strong>{currentPlayer?.name || 'Waiting...'}</strong>
+                  {!currentPlayer?.connected && currentPlayer && <span style={{ color: 'var(--error-color)', fontSize: '0.8rem', marginLeft: '8px' }}>(Disconnected)</span>}
+                </span>
           )}
         </p>
-        {isHost && (
+        {isHost && !allTurnsDone && (
           <button
             onClick={onNextTurn}
             style={{

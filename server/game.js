@@ -42,6 +42,7 @@ class GameManager {
         const oldSocketId = existingPlayer.id;
         existingPlayer.id = playerId;
         existingPlayer.name = playerName; // Update name in case it changed (optional)
+        const previouslyConnected = existingPlayer.connected;
         existingPlayer.connected = true;
         
         // Update hostId if necessary
@@ -53,6 +54,10 @@ class GameManager {
         if (this.disconnectTimeouts.has(userId)) {
             clearTimeout(this.disconnectTimeouts.get(userId));
             this.disconnectTimeouts.delete(userId);
+        }
+
+        if (!previouslyConnected) {
+            this.addSystemMessage(lobbyId, `${playerName} has reconnected.`);
         }
         
         return { lobby };
@@ -67,6 +72,7 @@ class GameManager {
     if (lobby.scores[userId] === undefined) {
         lobby.scores[userId] = 0;
     }
+    this.addSystemMessage(lobbyId, `${playerName} joined the lobby.`);
     return { lobby };
   }
 
@@ -110,13 +116,15 @@ class GameManager {
     const lobby = this.lobbies.get(lobbyId);
     if (!lobby) return { error: 'Lobby not found' };
     if (lobby.hostId !== requesterId) return { error: 'Only host can start game' };
-    if (lobby.players.length < 3) return { error: 'Need at least 3 players' };
+    
+    const activePlayers = lobby.players.filter(p => p.connected);
+    if (activePlayers.length < 3) return { error: 'Need at least 3 connected players' };
     if (lobby.words.length === 0) return { error: 'Word list is empty! Add words.' };
     
-    // Validate impostor count
+    // Validate impostor count against active players
     const impostorCount = lobby.settings.impostorCount;
-    if (impostorCount >= lobby.players.length) {
-        return { error: `Too many impostors! Max ${lobby.players.length - 1}` };
+    if (impostorCount >= activePlayers.length) {
+        return { error: `Too many impostors! Need at least one innocent player among connected players.` };
     }
 
     // Select random word from lobby's current list
@@ -129,27 +137,36 @@ class GameManager {
     lobby.roundResults = null;
     lobby.messages = [];
 
-    // Select multiple unique impostors
-    const playersCopy = [...lobby.players];
+    // Select multiple unique impostors from ACTIVE players only
+    const candidates = [...activePlayers];
     lobby.impostorIds = [];
     
     for (let i = 0; i < impostorCount; i++) {
-        const randomIndex = Math.floor(Math.random() * playersCopy.length);
-        lobby.impostorIds.push(playersCopy[randomIndex].id);
-        playersCopy.splice(randomIndex, 1);
+        const randomIndex = Math.floor(Math.random() * candidates.length);
+        lobby.impostorIds.push(candidates[randomIndex].userId);
+        candidates.splice(randomIndex, 1);
     }
     
     // Set Turn Order (Shuffled)
-    lobby.turnOrder = lobby.players
+    const activeUserIds = lobby.players
         .filter(p => p.connected)
-        .map(p => p.userId)
-        .sort(() => Math.random() - 0.5);
+        .map(p => p.userId);
+    
+    // Fisher-Yates Shuffle
+    for (let i = activeUserIds.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [activeUserIds[i], activeUserIds[j]] = [activeUserIds[j], activeUserIds[i]];
+    }
+    
+    lobby.turnOrder = activeUserIds;
     lobby.currentPlayerIndex = 0;
 
     // Backward compatibility for MVP if needed, but better to update client
     lobby.impostorId = lobby.impostorIds[0]; 
 
     this.addSystemMessage(lobbyId, `Game started! Role: Describe the word without giving it away.`);
+    const firstPlayer = lobby.players.find(p => p.userId === lobby.turnOrder[0]);
+    this.addSystemMessage(lobbyId, `It's ${firstPlayer?.name}'s turn to describe!`);
 
     return { lobby };
   }
@@ -215,19 +232,17 @@ class GameManager {
     // 3. Calculate points for everyone
     // Count votes that fell on innocent players
     const innocentVotes = Object.values(lobby.votes).filter(targetUserId => {
-        const targetPlayer = lobby.players.find(p => p.userId === targetUserId);
-        return targetPlayer && !impostorIds.includes(targetPlayer.id);
+        return !impostorIds.includes(targetUserId);
     }).length;
 
     lobby.players.forEach(player => {
         const targetId = lobby.votes[player.userId];
-        const playerIsImpostor = impostorIds.includes(player.id);
+        const playerIsImpostor = impostorIds.includes(player.userId);
         let pointsGained = 0;
         
         if (!playerIsImpostor) {
             // Innocent player: +10 if they voted for an impostor
-            const targetPlayer = lobby.players.find(p => p.userId === targetId);
-            if (targetPlayer && impostorIds.includes(targetPlayer.id)) {
+            if (impostorIds.includes(targetId)) {
                 pointsGained = 10;
             }
         } else {
@@ -258,7 +273,7 @@ class GameManager {
     lobby.roundResults = {
         roundScores,
         voteDetails,
-        impostorNames: lobby.players.filter(p => impostorIds.includes(p.id)).map(p => p.name)
+        impostorNames: lobby.players.filter(p => impostorIds.includes(p.userId)).map(p => p.name)
     };
     lobby.status = 'results';
 
@@ -297,6 +312,8 @@ class GameManager {
         
         this.disconnectTimeouts.set(player.userId, timeoutId);
         
+        this.addSystemMessage(lobbyId, `${player.name} disconnected. Waiting 10s for reconnect...`);
+        
         return { lobbyId, lobby, type: 'disconnect_pending' };
       }
     }
@@ -312,8 +329,20 @@ class GameManager {
           // Verify they are still disconnected before removing
           if (lobby.players[playerIndex].connected) return;
 
+          const userName = lobby.players[playerIndex].name;
           lobby.players.splice(playerIndex, 1);
           this.disconnectTimeouts.delete(userId);
+          
+          this.addSystemMessage(lobbyId, `${userName} left the game.`);
+
+          // Remove from turn order if game is active
+          if (lobby.turnOrder.includes(userId)) {
+              const turnIndex = lobby.turnOrder.indexOf(userId);
+              lobby.turnOrder.splice(turnIndex, 1);
+              if (lobby.currentPlayerIndex >= turnIndex && lobby.currentPlayerIndex > 0) {
+                  lobby.currentPlayerIndex--;
+              }
+          }
 
           let result = { lobbyId, lobby, empty: false };
 
@@ -347,6 +376,15 @@ class GameManager {
 
     lobby.players.splice(playerIndex, 1);
     this.disconnectTimeouts.delete(targetUserId);
+
+    // Remove from turn order
+    if (lobby.turnOrder.includes(targetUserId)) {
+        const turnIndex = lobby.turnOrder.indexOf(targetUserId);
+        lobby.turnOrder.splice(turnIndex, 1);
+        if (lobby.currentPlayerIndex >= turnIndex && lobby.currentPlayerIndex > 0) {
+            lobby.currentPlayerIndex--;
+        }
+    }
 
     return { lobby, kickedSocketId };
   }

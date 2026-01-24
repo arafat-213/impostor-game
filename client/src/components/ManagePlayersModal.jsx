@@ -47,7 +47,7 @@ function ManagePlayersModal({ isOpen, onClose, players, onKickPlayer, myId }) {
         <div style={{ width: '100%', marginBottom: '1rem' }}>
           <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>Host only: Kick players from the game</p>
           {players.map(p => (
-            <div key={p.id} style={{ 
+            <div key={p.userId} style={{ 
                 display: 'flex', 
                 justifyContent: 'space-between', 
                 alignItems: 'center',
