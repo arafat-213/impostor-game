@@ -275,7 +275,6 @@ function Game({
 
       {!revealed ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-          <p style={{ color: 'var(--secondary-color)', fontSize: '0.8rem' }}>CATEGORY: {lobby.selectedCategory}</p>
            <h2>Role Assigned</h2>
            <p>Only you can see this.</p>
            <button 
@@ -306,14 +305,12 @@ function Game({
                 margin: '1rem 0'
               }}>
                 THE IMPOSTOR
-              </h1>
-                <p>Category: <strong>{lobby.selectedCategory}</strong></p>
+                </h1>
               <p>Blend in. Don't get caught.</p>
             </div>
           ) : (
             <div style={{ marginBottom: '2rem' }}>
               <h2 style={{ color: 'var(--secondary-color)' }}>YOU ARE INNOCENT</h2>
-                  <p>Category: <strong>{lobby.selectedCategory}</strong></p>
               <p>The shared word is:</p>
                 <h1 style={{ 
                   fontSize: '3.5rem',

@@ -48,7 +48,7 @@ function GuideModal({ isOpen, onClose }) {
         <div style={{ textAlign: 'left', width: '100%' }}>
           <h3 style={{ color: 'var(--secondary-color)', marginBottom: '0.5rem' }}>How to Play</h3>
           <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>1. Every player is given the same secret word, except the <strong>Impostors</strong>.</p>
-          <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>2. Impostors don't know the word, but they see the category or are just told they are the Impostor.</p>
+          <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>2. Impostors don't know the word, they are just told they are the Impostor.</p>
           <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>3. Players take turns describing the word without giving it away too easily.</p>
           <p style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>4. After everyone has spoken, everyone votes on who they think is the Impostor.</p>
         </div>
